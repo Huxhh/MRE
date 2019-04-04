@@ -1,0 +1,6 @@
+*.json
+.ipy*/
+.idea/
+__pycache__/
+data/
+*.txt
