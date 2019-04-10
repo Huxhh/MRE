@@ -267,7 +267,7 @@ class Model(object):
 
                 for logit in logit_array:
                     spo = {}
-                    for tgt in self.num_target:
+                    for tgt in range(self.num_target):
                         stack1 = []
                         stack2 = []
                         for i in range(len(logit)):
@@ -283,8 +283,8 @@ class Model(object):
                                 if not tgt in spo:
                                     spo[tgt] = {'subject': [], 'object': []}
                                 spo[tgt]['object'].append((stack2.pop(),i))
-                        out_file.write(json.dumps(spo))
-                        out_file.write('\n')
+                    out_file.write(json.dumps(spo))
+                    out_file.write('\n')
 
 
 if __name__ == '__main__':
@@ -302,7 +302,7 @@ if __name__ == '__main__':
         model.compute_loss()
         model.train_val()
     else:
-        tg = ds.infer_generator(data_path='./data/test_data_char.json',batch_size=1)
+        tg = ds.infer_generator(data_path='./data/test_data_char.json',batch_size=conf.batch_size)
         infer_set = tf.data.Dataset.from_generator(tg,
                                                    output_shapes=ds.OUTPUT_SHAPES[:-1],
                                                    output_types=ds.OUTPUT_TYPES[:-1])

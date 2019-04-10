@@ -19,8 +19,8 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode',default='train')
-parser.add_argument('--epochs',default=20)
-parser.add_argument('--batch_size',default=256)
+parser.add_argument('--epochs',default=20,type=int)
+parser.add_argument('--batch_size',default=256,type=int)
 
 args = parser.parse_args()
 
@@ -30,7 +30,7 @@ class Config(object):
     def __init__(self):
         self.num_vocab = 8000
         self.vocab_size = 128
-        self.num_pos = 24
+        self.num_pos = 25
         self.pos_size = 128
         self.position_size = 64
         self.d_model = 256
@@ -45,7 +45,7 @@ class Config(object):
         self.train_epochs = args.epochs
         self.batch_size = args.batch_size
         self.val_steps = 21632//self.batch_size + 1
-        self.steps_each_epoch = 172991//self.batch_size + 1
+        self.steps_each_epoch = 173100//self.batch_size + 1
 
         self.infer_steps = 9949//self.batch_size + 1
 
