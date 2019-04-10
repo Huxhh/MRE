@@ -15,6 +15,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--mode',default='train')
+parser.add_argument('--epochs',default=20)
+parser.add_argument('--batch_size',default=256)
+
+args = parser.parse_args()
 
 VOCAB_SIZE = 8000
 
@@ -31,11 +39,11 @@ class Config(object):
         self.num_target = 49
         self.target_size = 4
 
-        self.mode = 'train'
+        self.mode = args.mode
 
         
-        self.train_epochs = 100
-        self.batch_size = 64
+        self.train_epochs = args.epochs
+        self.batch_size = args.batch_size
         self.val_steps = 21632//self.batch_size + 1
         self.steps_each_epoch = 172991//self.batch_size + 1
 
