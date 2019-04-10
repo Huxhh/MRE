@@ -31,7 +31,7 @@ for line1,line2 in zip(out_file.readlines(),test_file.readlines()):
             for sbj in subject_list:
                 spo_list.append({'predicate':relations[r]})
                 spo_list[-1]['object'] = ''.join([pos_list[i][0] for i in range(obj[0],obj[1]+1)])
-                spo_list[-1]['subject'] = ''.join([pos_list][0] for i in range(sbj[0],sbj[1]+1))
+                spo_list[-1]['subject'] = ''.join([pos_list][i][0] for i in range(sbj[0],sbj[1]+1))
                 spo_list[-1]['object_type'] = ''
                 spo_list[-1]['subject_type'] = ''
 
