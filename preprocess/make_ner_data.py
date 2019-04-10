@@ -64,6 +64,7 @@ def process(filename,out_filename,is_char=True):
 
 			line = json.loads(line)
 			pos_list = line['postag']
+			text = line['text']
 			if is_char:
 				new_pos_list = []
 				for pos in pos_list:
@@ -72,6 +73,8 @@ def process(filename,out_filename,is_char=True):
 					for char in word:
 						new_pos_list.append({'word':char,'pos':p})
 				pos_list = new_pos_list
+			if len(pos_list) == 0:
+				pos_list = [{'word':w,'pos':"#UNK"} for w in text]
 
 			word_list = [x['word'] for x in pos_list]
 
@@ -96,9 +99,34 @@ def process(filename,out_filename,is_char=True):
 					break
 				relations.append({'object_begin':ob,'object_end':oe,'subject_begin':sb,'subject_end':se,'predicate':predicate})
 			if not flag:
-				out.write(json.dumps({'pos_list': pos_list, 'relations': relations},ensure_ascii=False))
+				out.write(json.dumps({'text':text,'pos_list': pos_list, 'relations': relations},ensure_ascii=False))
 				out.write('\n')
+def process_test(filename,out_filename,is_char=True):
+	if is_char:
+		out = open(out_filename+'_char.json','w',encoding='utf-8')
+	else:
+		out = open(out_filename+'_word.json','w',encoding='utf-8')
+	#
+	with open(filename,encoding='utf-8') as file:
 
+		for line in file:
+
+			line = json.loads(line)
+			pos_list = line['postag']
+			text = line['text']
+			if is_char:
+				new_pos_list = []
+				for pos in pos_list:
+					word = pos['word']
+					p = pos['pos']
+					for char in word:
+						new_pos_list.append({'word':char,'pos':p})
+				pos_list = new_pos_list
+			if len(pos_list) == 0:
+				pos_list = [{'word':w,'pos':"#UNK"} for w in text]
+
+			out.write(json.dumps({'text':text,'pos_list':pos_list},ensure_ascii=False))
+			out.write('\n')
 
 
 if __name__ == '__main__':
@@ -106,3 +134,5 @@ if __name__ == '__main__':
 	process('../data/dev_data.json','../data/dev_data')
 	process('../data/train_data.json','../data/train_data',False)
 	process('../data/dev_data.json','../data/dev_data',False)
+	process_test('../data/test1_data_postag.json','../data/test_data')
+	process_test('../data/test1_data_postag.json', '../data/test_data',False)

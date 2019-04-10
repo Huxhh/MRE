@@ -121,20 +121,77 @@ class train_generator(object):
         return self.__iter__()
 
 
-class infer_generator(train_generator):
-    def __int__(self,):
+class infer_generator(object):
+    def __init__(self,data_path,batch_size=128,is_char=True):
+        data = []
+        with open(data_path,encoding='utf-8') as file:
+            for line in file:
+                data.append(json.loads(line))
+        self.data = data
+        self.batch_size = batch_size
+        self.steps = len(self.data)//self.batch_size
+        if len(self.data)%self.batch_size != 0:
+            self.steps += 1
+        if is_char:
+            self.word2id = char2id
+        else:
+            self.word2id = word2id
+    def __len__(self):
+        return self.steps
+
+    def __iter__(self):
+        w2i = self.word2id
+        while True:
+            idxs = list(range(len(self.data)))
+            T, P, L = [], [], []
+
+            for i in idxs:
+                item = self.data[i]
+                pos_list = item['pos_list']
+                text = []
+                pos = []
+
+                for pos_tag in pos_list:
+                    text.append(w2i.get(pos_tag['word'],1))
+                    pos.append(pos2id.get(pos_tag['pos']))
+                    # target.append([0]*2)
+
+
+                T.append(text)
+                P.append(pos)
+                L.append(len(text))
+                if len(T) == self.batch_size or i == idxs[-1]:
+                    max_length = max(L)
+                    if i == idxs[-1]:
+                        res = self.batch_size-len(T)
+                        T.extend([[] for _ in range(res)])
+                        P.extend([[] for _ in range(res)])
+                        L.extend([0 for _ in range(res)])
+
+                    for j in range(len(T)):
+                        if L[j] < max_length:
+                            T[j].extend([0]*(max_length-L[j]))
+                            P[j].extend([0]*(max_length-L[j]))
+                    yield np.array(T).astype(np.int32),\
+                          np.array(P).astype(np.int32),\
+                          np.array(L).astype(np.int32),\
+                          np.array(max_length).astype(np.int32)
+                    T,P,L = [],[],[]
+
+    def __call__(self):
+        return self.__iter__()
 
 
 
 
 
 if __name__ == '__main__':
-    g_f = train_generator('./data/train_data_char.json')
-
+    # g_f = train_generator('./data/train_data_char.json')
+    g_f = infer_generator('./data/test_data_char.json')
     g = g_f()
-    for i in range(1600):
+    for i in range(1):
         s = next(g)
-        print(s[-1].shape)
+        print(s[-1])
         print(i)
     # # for g in g_f():
     # #     pass

@@ -24,7 +24,7 @@ import dataset as ds
 from config import Config
 
 class Model(object):
-    def __init__(self,config,train_set,val_set=None,infer_set =None):
+    def __init__(self,config,train_set=None,val_set=None,infer_set =None):
 
         self.mode = config.mode
 
@@ -45,7 +45,7 @@ class Model(object):
         self.steps_each_epoch = config.steps_each_epoch
         self.train_epochs = config.train_epochs
         self.val_steps = config.val_steps
-        self.infer_steps = config.inter_steps
+        self.infer_steps = config.infer_steps
 
         self.global_step = tf.train.get_or_create_global_step()
 
@@ -70,22 +70,23 @@ class Model(object):
         self.gpu_config = tf.ConfigProto()
         self.gpu_config.gpu_options.allow_growth = True
 
-        types = train_set.output_types
-        shapes = train_set.output_shapes
-        # classes = train_set.output_classes
-        self.train_iterator = train_set.make_one_shot_iterator().string_handle()
-        self.val_iterator = val_set.make_one_shot_iterator().string_handle()
-        if infer_set:
-            self.infer_iterator = infer_set.make_one_shot_iterator().string_handle()
-        else:
-            self.infer_iterator = self.val_iterator
-        self.handle_holder = tf.placeholder(dtype=tf.string,
-                                            shape=None,
-                                            name='input_handle_holder')
+        if self.mode == 'train':
+            types = train_set.output_types
+            shapes = train_set.output_shapes
+            # classes = train_set.output_classes
+            self.train_iterator = train_set.make_one_shot_iterator().string_handle()
+            self.val_iterator = val_set.make_one_shot_iterator().string_handle()
 
-        self.iterator = tf.data.Iterator.from_string_handle(self.handle_holder,
-                                                            output_types=types,
-                                                            output_shapes=shapes)
+            self.handle_holder = tf.placeholder(dtype=tf.string,
+                                                shape=None,
+                                                name='input_handle_holder')
+
+            self.iterator = tf.data.Iterator.from_string_handle(self.handle_holder,
+                                                                output_types=types,
+                                                                output_shapes=shapes)
+        else:
+            self.iterator = infer_set.make_one_shot_iterator()
+
         self.logit = None
         self.loss = None
         self.run_ops = []
@@ -252,7 +253,7 @@ class Model(object):
                                latest_filename=self.ckpt_name)
 
     def infer(self):
-        assert self.infer_iterator != None
+
         var_list = tf.global_variables()
         saver = tf.train.Saver(var_list, max_to_keep=5, filename=self.ckpt_name)
         logit_tensor = self.logit
@@ -261,9 +262,8 @@ class Model(object):
         with tf.Session(config=self.gpu_config) as sess:
             ckpt = tf.train.latest_checkpoint(self.ckpt_path, self.ckpt_name)
             saver.restore(sess, ckpt)
-            infer_handle = sess.run(self.infer_iterator)
             for _ in range(self.infer_steps):
-                logit_array = sess.run(logit_tensor,feed_dict={self.handle_holder:infer_handle})
+                logit_array = sess.run(logit_tensor)
 
                 for logit in logit_array:
                     spo = {}
@@ -287,41 +287,26 @@ class Model(object):
                         out_file.write('\n')
 
 
-
-
-
-
-
-
-
-    def train_val_infer(self):
-        pass
-
-def dev_fn(labels,logits):
-    TP = 0
-    FP = 0
-
-    for label_array,logit_array in zip(labels,logits):
-        pred_array = np.argmax(logit_array,axis=-1)
-        for i in range(self.num_target):
-            for p,l in zip(label_array[:,i],pred_array[:,i]):
-                pass
-                
-
-
-
-
-
 if __name__ == '__main__':
 
     conf = Config()
-    tg = ds.train_generator(data_path='./data/train_data_char.json',batch_size = conf.batch_size)
-    vg = ds.train_generator(data_path='./data/dev_data_char.json',batch_size=conf.batch_size)
+    if conf.mode == 'train':
+        tg = ds.train_generator(data_path='./data/train_data_char.json',batch_size = conf.batch_size)
+        vg = ds.train_generator(data_path='./data/dev_data_char.json',batch_size=conf.batch_size)
 
-    train_set = tf.data.Dataset.from_generator(tg,output_shapes=ds.OUTPUT_SHAPES,output_types=ds.OUTPUT_TYPES)
-    val_set = tf.data.Dataset.from_generator(vg,output_shapes=ds.OUTPUT_SHAPES,output_types=ds.OUTPUT_TYPES)
+        train_set = tf.data.Dataset.from_generator(tg,output_shapes=ds.OUTPUT_SHAPES,output_types=ds.OUTPUT_TYPES)
+        val_set = tf.data.Dataset.from_generator(vg,output_shapes=ds.OUTPUT_SHAPES,output_types=ds.OUTPUT_TYPES)
 
-    model = Model(conf,train_set,val_set)
-    model.build_graph()
-    model.compute_loss()
-    model.train_val()
+        model = Model(conf,train_set,val_set)
+        model.build_graph()
+        model.compute_loss()
+        model.train_val()
+    else:
+        tg = ds.infer_generator(data_path='./data/test_data_char.json',batch_size=1)
+        infer_set = tf.data.Dataset.from_generator(tg,
+                                                   output_shapes=ds.OUTPUT_SHAPES[:-1],
+                                                   output_types=ds.OUTPUT_TYPES[:-1])
+
+        model = Model(conf,infer_set=infer_set)
+        model.build_graph()
+        model.infer()

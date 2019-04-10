@@ -39,6 +39,8 @@ class Config(object):
         self.val_steps = 21632//self.batch_size + 1
         self.steps_each_epoch = 172991//self.batch_size + 1
 
+        self.infer_steps = 9949//self.batch_size + 1
+
         self.optimizer = 'adam'
         self.beta1 = 0.9
         self.beta2 = 0.999

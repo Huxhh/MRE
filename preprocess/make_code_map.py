@@ -49,6 +49,7 @@ with open('../char_map.txt','w',encoding='utf-8') as file:
 		file.write('\n')
 
 with open('../pos_map.txt','w',encoding='utf-8') as file:
+	file.write('#UNK\n')
 	for pos in pos_set:
 		file.write(pos)
 		file.write('\n')
