@@ -20,7 +20,7 @@ import numpy as np
 import json
 from sklearn.metrics import f1_score
 
-import dataset as ds
+import dataset_v3 as ds
 from config import Config
 
 class Model(object):
@@ -97,9 +97,22 @@ class Model(object):
 
     def build_graph(self):
         if self.mode == 'train' or self.mode == 'val':
-            T,P,L,max_length,self.target = self.iterator.get_next()
+            T,P,L,self.target = self.iterator.get_next()
         else:
-            T, P, L, max_length = self.iterator.get_next()
+            T, P, L = self.iterator.get_next()
+        random_mask_T = tf.cast(tf.greater(tf.random_uniform(shape= tf.shape(T)),0.2),tf.int32)
+
+        # input dropout
+        if self.mode == 'train':
+            T = tf.multiply(T,random_mask_T)
+        random_mask_P = tf.cast(tf.greater(tf.random_uniform(shape=tf.shape(P)),0.2),tf.int32)
+        if self.mode == 'train':
+            P = tf.multiply(P,random_mask_P)
+
+        L = tf.squeeze(L,axis=-1)
+        max_length = tf.shape(T)[1]
+        batch_size = tf.shape(T)[0]
+
 
         self.T = T
         self.P = P
@@ -114,48 +127,54 @@ class Model(object):
         text = tf.nn.embedding_lookup(word_embedding,T)
         pos = tf.nn.embedding_lookup(pos_embedding,P)
         features = tf.concat([text,pos],axis=-1)
-        # features = text
 
-        f_cell = tf.nn.rnn_cell.GRUCell(num_units=self.num_units//2)
-        b_cell = tf.nn.rnn_cell.GRUCell(num_units=self.num_units//2)
+        features = text
+        for i in range(1):
 
-
-
-        f_state = f_cell.zero_state(self.batch_size,dtype=tf.float32)
-        b_state = b_cell.zero_state(self.batch_size,dtype=tf.float32)
-
-        outputs,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw=f_cell,
-                                                    cell_bw=b_cell,
-                                                    inputs=features,
-                                                    initial_state_fw=f_state,
-                                                    initial_state_bw=b_state,
-                                                    dtype=tf.float32,
-                                                    sequence_length=L)
+            f_cell = tf.nn.rnn_cell.GRUCell(num_units=self.num_units//2)
+            b_cell = tf.nn.rnn_cell.GRUCell(num_units=self.num_units//2)
 
 
-        features = tf.concat(outputs,axis=-1)
+
+            f_state = f_cell.zero_state(batch_size,dtype=tf.float32)
+            b_state = b_cell.zero_state(batch_size,dtype=tf.float32)
+
+            outputs,_ = tf.nn.bidirectional_dynamic_rnn(cell_fw=f_cell,
+                                                        cell_bw=b_cell,
+                                                        inputs=features,
+                                                        initial_state_fw=f_state,
+                                                        initial_state_bw=b_state,
+                                                        dtype=tf.float32,
+                                                        sequence_length=L)
+
+            features = tf.concat(outputs,axis=-1)
 
 
-        mask =tf.cast(tf.greater(T,0),tf.float32)
+        # mask =tf.cast(tf.greater(T,0),tf.float32)
+        mask = tf.sequence_mask(L,dtype=tf.float32)
         mask = tf.expand_dims(mask,axis=-1)
 
         x = features
-        
-        
 
+        for i in range(3):
+            x1 = tf.layers.conv1d(x,kernel_size=2,filters=self.d_model//4,padding='same',activation=tf.nn.relu)
+            x2 = tf.layers.conv1d(x,kernel_size=3,filters=self.d_model//4,padding='same',activation=tf.nn.relu)
+            x3 = tf.layers.conv1d(x,kernel_size=4,filters=self.d_model//4,padding='same',activation=tf.nn.relu)
+            x4 = tf.layers.conv1d(x,kernel_size=5,filters=self.d_model//4,padding='same',activation=tf.nn.relu)
+            _x = tf.concat([x1,x2,x3,x4],axis=-1)
+            x = x+_x
         
-
-        x = tf.layers.conv1d(x,kernel_size = 3,filters=self.d_model,padding='same',activation=tf.nn.relu)
-        x = tf.layers.conv1d(x,kernel_size=3,filters=self.d_model,padding='same',activation=tf.nn.relu)
         x_max = tf.reduce_max(x + (mask-1)*1e10,axis=1,keep_dims=True)
+
         x_max = tf.tile(x_max,[1,max_length,1])
         x = tf.concat([x,x_max],axis=-1)
+
+        # output dropout
+        if self.mode == 'train':
+            x = tf.nn.dropout(x,0.5)
         x = tf.layers.conv1d(x,kernel_size=1,filters=self.num_target*self.target_size,padding='same',activation=None)
-        # x = tf.layers.conv1d(x,kernel_size=1,filters=2,padding='same',activation=None)
-
-        x = tf.multiply(x,mask)
+        # logit = x + (mask-1)*1e10
         logit = x
-
         self.logit = logit
 
     def compute_loss(self):
@@ -166,7 +185,7 @@ class Model(object):
         # label = tf.one_hot(label,depth=self.target_size)
         # label = tf.reshape(label,[-1,self.target_size])
         # logit = tf.reshape(logit,[-1,self.target_size])
-        mask = tf.cast(tf.greater(self.T, 0), tf.float32)
+        mask = tf.sequence_mask(self.L,dtype=tf.float32)
         losses = tf.nn.sigmoid_cross_entropy_with_logits(labels=label,logits=logit)*tf.expand_dims(mask,-1)
         loss = tf.reduce_sum(losses)/tf.reduce_sum(mask)
         self.loss = loss
@@ -228,18 +247,23 @@ class Model(object):
             for e in range(self.train_epochs):
                 result = {}
                 for i in range(self.steps_each_epoch):
+                # for i in range(10):
                     result = sess.run(run_ops, feed_dict={self.handle_holder: train_handle})
-                    if result['step'] %1 == 0:
+                    if result['step'] %100 == 0:
                         print('%d:\t%f' % (result['step'], result['loss']))
                 logit_list = []
                 label_list = []
                 loss_list = []
+                length_list = []
 
                 for j in range(self.val_steps):
-                    logit_array,label_array,loss_ = sess.run([self.logit,self.target,self.loss],
-                                                       feed_dict={self.handle_holder:val_handle})
+                # for j in range(10):
+                    logit_array,label_array,length_array,loss_ =\
+                     sess.run([self.logit,self.target,self.L,self.loss],
+                        feed_dict={self.handle_holder:val_handle})
                     logit_list.extend(logit_array)
                     label_list.extend(label_array)
+                    length_list.extend(length_array)
                     loss_list.append(loss_)
 
                 print('epoch %d'%e)
@@ -251,62 +275,104 @@ class Model(object):
                     saver.save(sess, self.ckpt_path,
                                global_step=result['step'],
                                latest_filename=self.ckpt_name)
+                    out_file = './reslut_dev_epoch_%d.json'%e
+                    decode_fn(logit_list,
+                        length_list,
+                        './data/dev_data_char.json',
+                        out_file,
+                        num_target=self.num_target
+                        )
+
+
 
     def infer(self):
 
         var_list = tf.global_variables()
         saver = tf.train.Saver(var_list, max_to_keep=5, filename=self.ckpt_name)
         logit_tensor = self.logit
+        length_tensor = self.L
 
         out_file = open('out.json','w')
         with tf.Session(config=self.gpu_config) as sess:
             ckpt = tf.train.latest_checkpoint(self.ckpt_path, self.ckpt_name)
             saver.restore(sess, ckpt)
+            logit_list = []
+            length_list =[]
             for _ in range(self.infer_steps):
-                logit_array = sess.run(logit_tensor)
+            # for _ in range(10):
+                logit_array,length_array = sess.run([logit_tensor,length_tensor])
+                logit_list.extend(logit_array)
+                length_list.extend(length_array)
+            decode_fn(logit_list,
+                length_list,
+                './data/test_data_char.json',
+                './result.json',
+                num_target=self.num_target)
 
-                for logit in logit_array:
-                    spo = {}
-                    for tgt in range(self.num_target):
-                        stack1 = []
-                        stack2 = []
-                        for i in range(len(logit)):
-                            if logit[i][tgt] > 0.5:
-                                stack1.append(i)
-                            if logit[i][tgt+self.num_target]>0.5 and len(stack1)>0:
-                                if not tgt in spo:
-                                    spo[tgt] = {'subject': [], 'object': []}
-                                spo[tgt]['subject'].append((stack1.pop(),i))
-                            if logit[i][tgt+2*self.num_target]>0.5:
-                                stack2.append(i)
-                            if logit[i][tgt+3*self.num_target]>0.5 and len(stack2)>0:
-                                if not tgt in spo:
-                                    spo[tgt] = {'subject': [], 'object': []}
-                                spo[tgt]['object'].append((stack2.pop(),i))
-                    out_file.write(json.dumps(spo))
-                    out_file.write('\n')
+
+
+def decode_fn(logit_array,length_array,data_file,out_file,num_target=49):
+    with open('./relation_map.txt',encoding='utf-8') as file:
+        relations = [line.strip() for line in file]
+    file = open(data_file,encoding='utf-8')
+    data = [json.loads(line) for line in file]
+    result_file = open(out_file,'w')
+    for logit,length,item in zip(logit_array,length_array,data):
+        spo = {}
+        for tgt in range(num_target):
+            stack1 = []
+            stack2 = []
+            for i in range(length):
+                if logit[i][tgt] >= 0.5:
+                    stack1.append(i)
+                if logit[i][tgt+num_target]>=0.5 and len(stack1)>0:
+                    if not tgt in spo:
+                        spo[tgt] = {'subject': [], 'object': []}
+                    spo[tgt]['subject'].append((stack1.pop(),i))
+                if logit[i][tgt+2*num_target]>=0.5:
+                    stack2.append(i)
+                if logit[i][tgt+3*num_target]>=0.5 and len(stack2)>0:
+                    if not tgt in spo:
+                        spo[tgt] = {'subject': [], 'object': []}
+                    spo[tgt]['object'].append((stack2.pop(),i))
+        pos_list = item['pos_list']
+        text = item['text']
+
+        spo_list = []
+        for r,t in spo.items():
+            object_list = t['object']
+            subject_list = t['subject']
+            for obj in object_list:
+                # print(obj)
+                for sbj in subject_list:
+                    # print(sbj)
+                    spo_list.append({'predicate':relations[int(r)]})
+                    spo_list[-1]['object'] = ''.join([pos_list[i]['word'] for i in range(obj[0],obj[1]+1)])
+                    spo_list[-1]['subject'] = ''.join([pos_list[i]['word'] for i in range(sbj[0],sbj[1]+1)])
+                    spo_list[-1]['object_type'] = ''
+                    spo_list[-1]['subject_type'] = ''
+
+        result_file.write(json.dumps({'text':text,'spo_list':spo_list},ensure_ascii=False))
+        result_file.write('\n')
+    result_file.close()
+
+
+
 
 
 if __name__ == '__main__':
 
     conf = Config()
     if conf.mode == 'train':
-        tg = ds.train_generator(data_path='./data/train_data_char.json',batch_size = conf.batch_size)
-        vg = ds.train_generator(data_path='./data/dev_data_char.json',batch_size=conf.batch_size)
-
-        train_set = tf.data.Dataset.from_generator(tg,output_shapes=ds.OUTPUT_SHAPES,output_types=ds.OUTPUT_TYPES)
-        val_set = tf.data.Dataset.from_generator(vg,output_shapes=ds.OUTPUT_SHAPES,output_types=ds.OUTPUT_TYPES)
+        train_set = ds.make_train_dataset('./data/train_data_char.json',batch_size=conf.batch_size)
+        val_set = ds.make_train_dataset('./data/dev_data_char.json',batch_size=conf.batch_size,shuffle=False)
 
         model = Model(conf,train_set,val_set)
         model.build_graph()
         model.compute_loss()
         model.train_val()
     else:
-        tg = ds.infer_generator(data_path='./data/test_data_char.json',batch_size=conf.batch_size)
-        infer_set = tf.data.Dataset.from_generator(tg,
-                                                   output_shapes=ds.OUTPUT_SHAPES[:-1],
-                                                   output_types=ds.OUTPUT_TYPES[:-1])
-
+        infer_set = ds.make_test_dataset('./data/test_data_char.json',batch_size=conf.batch_size)
         model = Model(conf,infer_set=infer_set)
         model.build_graph()
         model.infer()

@@ -13,7 +13,7 @@
 import json
 
 out_file = open('./out.json',encoding='utf-8')
-test_file = open('./data/test_data_char.json',encoding='utf-8')
+test_file = open('./data/dev_data_char.json',encoding='utf-8')
 result_file = open('./result.json','w',encoding='utf-8')
 with open('./relation_map.txt',encoding='utf-8') as file:
     relations = [line.strip() for line in file]

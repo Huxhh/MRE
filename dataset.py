@@ -186,13 +186,23 @@ class infer_generator(object):
 
 
 if __name__ == '__main__':
-    # g_f = train_generator('./data/train_data_char.json')
-    g_f = infer_generator('./data/test_data_char.json')
-    g = g_f()
-    for i in range(1):
-        s = next(g)
-        print(s[-1])
+
+    tg = train_generator(data_path='./data/dev_data_char.json',batch_size = 256)
+    train_set = tf.data.Dataset.from_generator(tg,output_shapes=OUTPUT_SHAPES,output_types=OUTPUT_TYPES)
+    iterator = train_set.make_one_shot_iterator()
+    a = iterator.get_next()
+    sess = tf.Session()
+    for i in range(1000000):
         print(i)
+        sess.run(a)
+    sess.close()
+    # # g_f = train_generator('./data/train_data_char.json')
+    # g_f = infer_generator('./data/test_data_char.json')
+    # g = g_f()
+    # for i in range(1):
+    #     s = next(g)
+    #     print(s[-1])
+    #     print(i)
     # # for g in g_f():
     # #     pass
     # #

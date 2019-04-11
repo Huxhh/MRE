@@ -15,8 +15,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
 
+import argparse
+import math
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode',default='train')
 parser.add_argument('--epochs',default=20,type=int)
@@ -44,10 +45,10 @@ class Config(object):
         
         self.train_epochs = args.epochs
         self.batch_size = args.batch_size
-        self.val_steps = 21632//self.batch_size + 1
-        self.steps_each_epoch = 173100//self.batch_size + 1
+        self.val_steps = math.ceil(21639/self.batch_size)
+        self.steps_each_epoch = math.ceil(173100/self.batch_size)
 
-        self.infer_steps = 9949//self.batch_size + 1
+        self.infer_steps = math.ceil(9949/self.batch_size)
 
         self.optimizer = 'adam'
         self.beta1 = 0.9
