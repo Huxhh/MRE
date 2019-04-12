@@ -2,16 +2,15 @@
 
 import json, os
 
-test_file = '/data/result_dev.json'
-target_file = '/data/dev_data.json'
+test_file = './result_dev.json'
+target_file = './data/dev_data.json'
 
 
 def compute_Fscore(test_file, target_file):
-    path = os.path.abspath('')
-    with open(path + test_file, 'r', encoding='utf-8') as f:
+    with open(test_file, 'r', encoding='utf-8') as f:
         test_data = f.readlines()
 
-    with open(path + target_file, 'r', encoding='utf-8') as f:
+    with open(target_file, 'r', encoding='utf-8') as f:
         target_data = f.readlines()
 
     data_num = min(len(test_data), len(target_data))
@@ -36,9 +35,9 @@ def compute_Fscore(test_file, target_file):
                 if pre['object'] == tar['object'] and pre['subject'] == tar['subject'] and pre['predicate'] == tar['predicate']:
                     predict_true_num += 1
 
-    recall = predict_true_num * 1.0 / target_spo_num
-    precision = predict_true_num * 1.0 / predict_spo_num
-    F = 2 * recall * precision / (recall + precision)
+    recall = predict_true_num * 1.0 / (target_spo_num+1e-10)
+    precision = predict_true_num * 1.0 / (predict_spo_num+1e-10)
+    F = 2 * recall * precision / (recall + precision+1e-10)
 
     return [precision, recall, F]
 
