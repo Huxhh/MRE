@@ -98,9 +98,10 @@ def make_train_dataset(files,batch_size=128,is_char=True,shuffle=True):
     map_fn = lambda line:tf.py_func(decode_fn,inp=[line],Tout=[tf.int32,tf.int32,tf.int32,tf.int32])
     if shuffle:
         dataset = dataset.shuffle(1000)
-    dataset = dataset.map(map_fn,num_parallel_calls=32)
+    dataset = dataset.map(map_fn,num_parallel_calls=batch_size*2)
     dataset = dataset.padded_batch(batch_size=batch_size,padded_shapes=([-1],[-1],[1],[-1,num_target * 4]))
     dataset = dataset.repeat()
+    dataset = dataset.prefetch(100)
     return dataset
 
 def make_test_dataset(files,batch_size=128,is_char=True):

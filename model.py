@@ -21,7 +21,7 @@ import json
 from sklearn.metrics import f1_score
 
 from multiprocessing import Process
-
+from computeF import compute_Fscore
 import dataset_v3 as ds
 from config import Config
 
@@ -132,7 +132,6 @@ class Model(object):
         pos = tf.nn.embedding_lookup(pos_embedding,P)
         features = tf.concat([text,pos],axis=-1)
 
-        features = text
         for i in range(1):
 
             f_cell = tf.nn.rnn_cell.GRUCell(num_units=self.num_units//2)
@@ -212,7 +211,8 @@ class Model(object):
             for e in range(self.train_epochs):
                 result={}
                 for i in range(self.steps_each_epoch):
-                    result = sess.run(run_ops,feed_dict={self.handle_holder:train_handle,self.drop_flag:True})
+                    result = sess.run(run_ops,
+                                      feed_dict={self.handle_holder:train_handle,self.drop_flag:True})
                     if i%100 == 0:
                         print('%d:\t%f'%(result['step'],result['loss']))
                 saver.save(sess,self.ckpt_path,
@@ -245,6 +245,8 @@ class Model(object):
             train_handle = sess.run(self.train_iterator)
             val_handle = sess.run(self.val_iterator)
             best_score = 0
+            with open('./data/dev_data_char.json',encoding='utf-8') as file:
+                data = [json.loads(line) for line in file]
             for e in range(self.train_epochs):
                 result = {}
                 # train steps
@@ -269,25 +271,23 @@ class Model(object):
 
                 print('epoch %d'%e)
                 # score = val_fn(label_list,logit_list)
-                score = 1/np.mean(loss_list)
-                print(1/score)
+                print('loss:\t%f'%np.mean(loss_list))
                 
-                saver.save(sess, self.ckpt_path,
-                           global_step=result['step'],
-                           latest_filename=self.ckpt_name)
                 out_file = './reslut_dev_epoch_%d.json'%e
 
-                file = open('./data/dev_data_char.json',encoding='utf-8')
-                data = [json.loads(line) for line in file]
-                file.close()
                 decode_fn(logit_list,
                     length_list,
                     data,
                     out_file,
                     num_target=self.num_target
                     )
-
-
+                p,r,f = compute_Fscore(out_file,'./data/dev_data.json')
+                print('P:\t%f,R:\t%f,F1:\t%f'%(p,r,f))
+                if f>best_score:
+                    best_score = f
+                    saver.save(sess, self.ckpt_path,
+                           global_step=result['step'],
+                           latest_filename=self.ckpt_name)
 
     def infer(self):
 
@@ -295,8 +295,6 @@ class Model(object):
         saver = tf.train.Saver(var_list, max_to_keep=5, filename=self.ckpt_name)
         logit_tensor = self.logit
         length_tensor = self.L
-
-        out_file = open('out.json','w')
         with tf.Session(config=self.gpu_config) as sess:
             ckpt = tf.train.latest_checkpoint(self.ckpt_path, self.ckpt_name)
             saver.restore(sess, ckpt)
@@ -341,7 +339,6 @@ def decode_fn(logit_array,length_array,data,out_file,num_target=49):
                     spo[tgt]['object'].append((stack2.pop(),i))
         pos_list = item['pos_list']
         text = item['text']
-
         spo_list = []
         for r,t in spo.items():
             object_list = t['object']

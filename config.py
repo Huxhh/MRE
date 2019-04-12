@@ -20,7 +20,7 @@ import argparse
 import math
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode',default='train')
-parser.add_argument('--epochs',default=20,type=int)
+parser.add_argument('--epochs',default=100,type=int)
 parser.add_argument('--batch_size',default=256,type=int)
 
 args = parser.parse_args()
