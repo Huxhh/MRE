@@ -20,6 +20,8 @@ import numpy as np
 import json
 from sklearn.metrics import f1_score
 
+from multiprocessing import Process
+
 import dataset_v3 as ds
 from config import Config
 
@@ -92,22 +94,24 @@ class Model(object):
         self.run_ops = []
         self.target = None
 
+        self.drop_flag = tf.placeholder(dtype=tf.bool,shape=[])
+
         self.ckpt_name = config.ckpt_name
         self.ckpt_path = config.ckpt_path
 
     def build_graph(self):
+        drop_flag = self.drop_flag
         if self.mode == 'train' or self.mode == 'val':
             T,P,L,self.target = self.iterator.get_next()
         else:
             T, P, L = self.iterator.get_next()
-        random_mask_T = tf.cast(tf.greater(tf.random_uniform(shape= tf.shape(T)),0.2),tf.int32)
+        
 
         # input dropout
-        if self.mode == 'train':
-            T = tf.multiply(T,random_mask_T)
+        random_mask_T = tf.cast(tf.greater(tf.random_uniform(shape= tf.shape(T)),0.2),tf.int32)
         random_mask_P = tf.cast(tf.greater(tf.random_uniform(shape=tf.shape(P)),0.2),tf.int32)
-        if self.mode == 'train':
-            P = tf.multiply(P,random_mask_P)
+        T = tf.cond(drop_flag,lambda:tf.multiply(T,random_mask_T),lambda:T)
+        P = tf.cond(drop_flag,lambda:tf.multiply(P,random_mask_P),lambda:P)
 
         L = tf.squeeze(L,axis=-1)
         max_length = tf.shape(T)[1]
@@ -170,8 +174,8 @@ class Model(object):
         x = tf.concat([x,x_max],axis=-1)
 
         # output dropout
-        if self.mode == 'train':
-            x = tf.nn.dropout(x,0.5)
+        x = tf.cond(drop_flag,lambda:tf.nn.dropout(x,0.5),lambda:x)
+
         x = tf.layers.conv1d(x,kernel_size=1,filters=self.num_target*self.target_size,padding='same',activation=None)
         # logit = x + (mask-1)*1e10
         logit = x
@@ -182,9 +186,6 @@ class Model(object):
         assert self.target != None, 'must compute loss in train mode or val mode'
         logit = self.logit
         label = tf.cast(self.target,tf.float32)
-        # label = tf.one_hot(label,depth=self.target_size)
-        # label = tf.reshape(label,[-1,self.target_size])
-        # logit = tf.reshape(logit,[-1,self.target_size])
         mask = tf.sequence_mask(self.L,dtype=tf.float32)
         losses = tf.nn.sigmoid_cross_entropy_with_logits(labels=label,logits=logit)*tf.expand_dims(mask,-1)
         loss = tf.reduce_sum(losses)/tf.reduce_sum(mask)
@@ -211,7 +212,7 @@ class Model(object):
             for e in range(self.train_epochs):
                 result={}
                 for i in range(self.steps_each_epoch):
-                    result = sess.run(run_ops,feed_dict={self.handle_holder:train_handle})
+                    result = sess.run(run_ops,feed_dict={self.handle_holder:train_handle,self.drop_flag:True})
                     if i%100 == 0:
                         print('%d:\t%f'%(result['step'],result['loss']))
                 saver.save(sess,self.ckpt_path,
@@ -246,9 +247,9 @@ class Model(object):
             best_score = 0
             for e in range(self.train_epochs):
                 result = {}
+                # train steps
                 for i in range(self.steps_each_epoch):
-                # for i in range(10):
-                    result = sess.run(run_ops, feed_dict={self.handle_holder: train_handle})
+                    result = sess.run(run_ops, feed_dict={self.handle_holder: train_handle,self.drop_flag:True})
                     if result['step'] %100 == 0:
                         print('%d:\t%f' % (result['step'], result['loss']))
                 logit_list = []
@@ -256,11 +257,11 @@ class Model(object):
                 loss_list = []
                 length_list = []
 
+                #validation steps:
                 for j in range(self.val_steps):
-                # for j in range(10):
                     logit_array,label_array,length_array,loss_ =\
                      sess.run([self.logit,self.target,self.L,self.loss],
-                        feed_dict={self.handle_holder:val_handle})
+                        feed_dict={self.handle_holder:val_handle,self.drop_flag:False})
                     logit_list.extend(logit_array)
                     label_list.extend(label_array)
                     length_list.extend(length_array)
@@ -270,18 +271,21 @@ class Model(object):
                 # score = val_fn(label_list,logit_list)
                 score = 1/np.mean(loss_list)
                 print(1/score)
-                if score>best_score:
-                    best_score = score
-                    saver.save(sess, self.ckpt_path,
-                               global_step=result['step'],
-                               latest_filename=self.ckpt_name)
-                    out_file = './reslut_dev_epoch_%d.json'%e
-                    decode_fn(logit_list,
-                        length_list,
-                        './data/dev_data_char.json',
-                        out_file,
-                        num_target=self.num_target
-                        )
+                
+                saver.save(sess, self.ckpt_path,
+                           global_step=result['step'],
+                           latest_filename=self.ckpt_name)
+                out_file = './reslut_dev_epoch_%d.json'%e
+
+                file = open('./data/dev_data_char.json',encoding='utf-8')
+                data = [json.loads(line) for line in file]
+                file.close()
+                decode_fn(logit_list,
+                    length_list,
+                    data,
+                    out_file,
+                    num_target=self.num_target
+                    )
 
 
 
@@ -299,23 +303,23 @@ class Model(object):
             logit_list = []
             length_list =[]
             for _ in range(self.infer_steps):
-            # for _ in range(10):
-                logit_array,length_array = sess.run([logit_tensor,length_tensor])
+                logit_array,length_array = sess.run([logit_tensor,length_tensor],feed_dict={self.drop_flag:False})
                 logit_list.extend(logit_array)
                 length_list.extend(length_array)
+
+            with open('./data/test_data_char.json',encoding='utf-8') as file:
+                data = [json.loads(line) for line in file]
             decode_fn(logit_list,
                 length_list,
-                './data/test_data_char.json',
+                data,
                 './result.json',
                 num_target=self.num_target)
 
 
 
-def decode_fn(logit_array,length_array,data_file,out_file,num_target=49):
+def decode_fn(logit_array,length_array,data,out_file,num_target=49):
     with open('./relation_map.txt',encoding='utf-8') as file:
         relations = [line.strip() for line in file]
-    file = open(data_file,encoding='utf-8')
-    data = [json.loads(line) for line in file]
     result_file = open(out_file,'w')
     for logit,length,item in zip(logit_array,length_array,data):
         spo = {}
