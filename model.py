@@ -264,7 +264,7 @@ class Model(object):
                     logit_array,label_array,length_array,loss_ =\
                      sess.run([self.logit,self.target,self.L,self.loss],
                         feed_dict={self.handle_holder:val_handle,self.drop_flag:False})
-                    logit_list.extend(logit_array)
+                    logit_list.extend(sigmoid(logit_array))
                     label_list.extend(label_array)
                     length_list.extend(length_array)
                     loss_list.append(loss_)
@@ -302,7 +302,7 @@ class Model(object):
             length_list =[]
             for _ in range(self.infer_steps):
                 logit_array,length_array = sess.run([logit_tensor,length_tensor],feed_dict={self.drop_flag:False})
-                logit_list.extend(logit_array)
+                logit_list.extend(sigmoid(logit_array))
                 length_list.extend(length_array)
 
             with open('./data/test_data_char.json',encoding='utf-8') as file:
@@ -312,50 +312,80 @@ class Model(object):
                 data,
                 './result.json',
                 num_target=self.num_target)
+    def val(self):
 
+        var_list = tf.global_variables()
+        saver = tf.train.Saver(var_list, max_to_keep=5, filename=self.ckpt_name)
+        logit_tensor = self.logit
+        length_tensor = self.L
 
+        with tf.Session(config=self.gpu_config) as sess:
+            ckpt = tf.train.latest_checkpoint(self.ckpt_path, self.ckpt_name)
+            saver.restore(sess, ckpt)
+            
+            logit_list = []
+            length_list =[]
+            for _ in range(self.val_steps):
+                logit_array,length_array = sess.run([logit_tensor,length_tensor],feed_dict={self.drop_flag:False})
+                logit_list.extend(sigmoid(logit_array))
+                length_list.extend(length_array)
+        with open('./data/dev_data_char.json',encoding='utf-8') as file:
+                data = [json.loads(line) for line in file]
+        for t in np.arange(0.1,0.6,0.1):
+            decode_fn(logit_list,
+                length_list,
+                data,
+                './result_dev_%.3f.json'%t,
+                num_target=self.num_target,
+                threshold = t)
+            p,r,f = compute_Fscore('./result_dev_%.3f.json'%t,'./data/dev_data.json')
+            print(p,r,f,t)
 
-def decode_fn(logit_array,length_array,data,out_file,num_target=49):
+def sigmoid(array):
+    return 1/(1+np.power(np.e,-array))
+
+def decode_fn(logit_array,length_array,data,out_file,num_target=49,threshold=0.5):
     with open('./relation_map.txt',encoding='utf-8') as file:
         relations = [line.strip() for line in file]
-    result_file = open(out_file,'w')
-    for logit,length,item in zip(logit_array,length_array,data):
-        spo = {}
-        for tgt in range(num_target):
-            stack1 = []
-            stack2 = []
-            for i in range(length):
-                if logit[i][tgt] >= 0.5:
-                    stack1.append(i)
-                if logit[i][tgt+num_target]>=0.5 and len(stack1)>0:
-                    if not tgt in spo:
-                        spo[tgt] = {'subject': [], 'object': []}
-                    spo[tgt]['subject'].append((stack1.pop(),i))
-                if logit[i][tgt+2*num_target]>=0.5:
-                    stack2.append(i)
-                if logit[i][tgt+3*num_target]>=0.5 and len(stack2)>0:
-                    if not tgt in spo:
-                        spo[tgt] = {'subject': [], 'object': []}
-                    spo[tgt]['object'].append((stack2.pop(),i))
-        pos_list = item['pos_list']
-        text = item['text']
-        spo_list = []
-        for r,t in spo.items():
-            object_list = t['object']
-            subject_list = t['subject']
-            for obj in object_list:
-                # print(obj)
-                for sbj in subject_list:
-                    # print(sbj)
-                    spo_list.append({'predicate':relations[int(r)]})
-                    spo_list[-1]['object'] = ''.join([pos_list[i]['word'] for i in range(obj[0],obj[1]+1)])
-                    spo_list[-1]['subject'] = ''.join([pos_list[i]['word'] for i in range(sbj[0],sbj[1]+1)])
-                    spo_list[-1]['object_type'] = ''
-                    spo_list[-1]['subject_type'] = ''
+    with open(out_file,'w',encoding='utf-8') as result_file:
+        for logit,length,item in zip(logit_array,length_array,data):
+            spo = {}
+            for tgt in range(num_target):
+                stack1 = []
+                stack2 = []
+                for i in range(length):
+                    if logit[i][tgt] >= threshold:
+                        stack1.append(i)
+                    if logit[i][tgt+num_target]>=threshold and len(stack1)>0:
+                        if not tgt in spo:
+                            spo[tgt] = {'subject': [], 'object': []}
+                        spo[tgt]['subject'].append((stack1.pop(),i))
+                    if logit[i][tgt+2*num_target]>=threshold:
+                        stack2.append(i)
+                    if logit[i][tgt+3*num_target]>=threshold and len(stack2)>0:
+                        if not tgt in spo:
+                            spo[tgt] = {'subject': [], 'object': []}
+                        spo[tgt]['object'].append((stack2.pop(),i))
+            pos_list = item['pos_list']
+            text = item['text']
 
-        result_file.write(json.dumps({'text':text,'spo_list':spo_list},ensure_ascii=False))
-        result_file.write('\n')
-    result_file.close()
+            spo_list = []
+            for r,t in spo.items():
+                object_list = t['object']
+                subject_list = t['subject']
+                for obj in object_list:
+                    # print(obj)
+                    for sbj in subject_list:
+                        # print(sbj)
+                        spo_list.append({'predicate':relations[int(r)]})
+                        spo_list[-1]['object'] = ''.join([pos_list[i]['word'] for i in range(obj[0],obj[1]+1)])
+                        spo_list[-1]['subject'] = ''.join([pos_list[i]['word'] for i in range(sbj[0],sbj[1]+1)])
+                        spo_list[-1]['object_type'] = ''
+                        spo_list[-1]['subject_type'] = ''
+
+            result_file.write(json.dumps({'text':text,'spo_list':spo_list},ensure_ascii=False))
+            result_file.write('\n')
+            result_file.flush()
 
 
 
