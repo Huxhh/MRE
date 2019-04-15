@@ -101,7 +101,7 @@ class Model(object):
 
     def build_graph(self):
         drop_flag = self.drop_flag
-        if self.mode == 'train' or self.mode == 'val':
+        if self.mode == 'train':
             T,P,L,self.target = self.iterator.get_next()
         else:
             T, P, L = self.iterator.get_next()
@@ -165,7 +165,7 @@ class Model(object):
             x3 = tf.layers.conv1d(x,kernel_size=4,filters=self.d_model//4,padding='same',activation=tf.nn.relu)
             x4 = tf.layers.conv1d(x,kernel_size=5,filters=self.d_model//4,padding='same',activation=tf.nn.relu)
             _x = tf.concat([x1,x2,x3,x4],axis=-1)
-            x = x+_x
+            x = _x
         
         x_max = tf.reduce_max(x + (mask-1)*1e10,axis=1,keep_dims=True)
 
@@ -186,8 +186,17 @@ class Model(object):
         logit = self.logit
         label = tf.cast(self.target,tf.float32)
         mask = tf.sequence_mask(self.L,dtype=tf.float32)
-        losses = tf.nn.sigmoid_cross_entropy_with_logits(labels=label,logits=logit)*tf.expand_dims(mask,-1)
-        loss = tf.reduce_sum(losses)/tf.reduce_sum(mask)
+        mask = tf.expand_dims(mask,-1)
+        # 如果某个句子不包含某种关系，那么不再对这种关系计算损失。
+        # 实验中，可以考虑，以某个概率，不对这种关系计算损失
+        mask_target = tf.reduce_sum(label,axis=1,keep_dims=True)>0
+        mask_random = tf.random_uniform(shape=tf.shape(mask_target),minval=0,maxval=1)<0.2
+        mask_target = tf.logical_or(mask_target,mask_random)
+        mask_target = tf.cast(tf.tile(mask_target,[1,self.max_length,1]),tf.float32)
+        mask = tf.multiply(mask_target,mask)
+
+        losses = tf.nn.sigmoid_cross_entropy_with_logits(labels=label,logits=logit)*mask
+        loss = tf.reduce_sum(losses)/(tf.reduce_sum(mask)+1e-10)
         self.loss = loss
         return self.loss
 
@@ -220,10 +229,6 @@ class Model(object):
                            latest_filename=self.ckpt_name)
 
                 print('epoch %d'%e)
-
-
-
-
 
 
     def train_val(self,val_fn=None):
@@ -311,7 +316,8 @@ class Model(object):
                 length_list,
                 data,
                 './result.json',
-                num_target=self.num_target)
+                num_target=self.num_target,
+                threshold=0.3)
     def val(self):
 
         var_list = tf.global_variables()
@@ -394,16 +400,30 @@ def decode_fn(logit_array,length_array,data,out_file,num_target=49,threshold=0.5
 if __name__ == '__main__':
 
     conf = Config()
+    if conf.is_char:
+    	train_name = './data/train_data_char.json'
+    	val_name = './data/val_data_char.json'
+    	infer_name = './data/test_data_char.json'
+    else:
+    	train_name = './data/train_data_word.json'
+    	val_name = './data/val_data_word.json'
+    	infer_name = './data/test_data_word.json'
+    train_name = ''
     if conf.mode == 'train':
-        train_set = ds.make_train_dataset('./data/train_data_char.json',batch_size=conf.batch_size)
-        val_set = ds.make_train_dataset('./data/dev_data_char.json',batch_size=conf.batch_size,shuffle=False)
+        train_set = ds.make_train_dataset('./data/train_data_char.json',batch_size=conf.batch_size,is_char=conf.is_char)
+        val_set = ds.make_train_dataset('./data/dev_data_char.json',batch_size=conf.batch_size,shuffle=False,is_char=conf.is_char)
 
         model = Model(conf,train_set,val_set)
         model.build_graph()
         model.compute_loss()
         model.train_val()
+    elif conf.mode == 'val':
+        infer_set = ds.make_test_dataset('./data/dev_data_char.json',batch_size=conf.batch_size,is_char=conf.is_char)
+        model = Model(conf,infer_set = infer_set)
+        model.build_graph()
+        model.val()
     else:
-        infer_set = ds.make_test_dataset('./data/test_data_char.json',batch_size=conf.batch_size)
+        infer_set = ds.make_test_dataset('./data/test_data_char.json',batch_size=conf.batch_size,is_char=conf.is_char)
         model = Model(conf,infer_set=infer_set)
         model.build_graph()
         model.infer()

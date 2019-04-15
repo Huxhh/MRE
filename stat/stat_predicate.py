@@ -31,7 +31,7 @@ def stat_predicate(filename):
 if __name__ == '__main__':
     train_n,train_c,train_a = stat_predicate('../data/train_data.json')
     dev_n,dev_c,dev_a = stat_predicate('../data/dev_data.json')
-    pred_n,pred_c,pred_a = stat_predicate('../result_dev.json')
+    pred_n,pred_c,pred_a = stat_predicate('../result_dev_0.300.json')
     with open('stat_macro.csv','w',encoding='utf-8') as file:
         file.write('key,train_items_ratio,dev_items_ratio,pred_items_ratio,train_count,dev_count,pred_count\n')
         for key in train_n.keys():

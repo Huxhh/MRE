@@ -29,6 +29,7 @@ VOCAB_SIZE = 8000
 
 class Config(object):
     def __init__(self):
+        self.is_char = True
         self.num_vocab = 8000
         self.vocab_size = 128
         self.num_pos = 25
@@ -46,7 +47,7 @@ class Config(object):
         self.train_epochs = args.epochs
         self.batch_size = args.batch_size
         self.val_steps = math.ceil(21639/self.batch_size)
-        self.steps_each_epoch = math.ceil(173100/self.batch_size)
+        self.steps_each_epoch = math.ceil(173108/self.batch_size)
 
         self.infer_steps = math.ceil(9949/self.batch_size)
 

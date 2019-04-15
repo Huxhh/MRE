@@ -91,15 +91,18 @@ def process(filename,out_filename,is_char=True):
 					log.write(json.dumps(line,ensure_ascii=False))
 					log.write('\n')
 					flag = True
-					break
+					continue
 				if sb == -1:
 					log.write(json.dumps(line, ensure_ascii=False))
 					log.write('\n')
 					flag = True
-					break
+					continue
 				relations.append({'object_begin':ob,'object_end':oe,'subject_begin':sb,'subject_end':se,'predicate':predicate})
 			if not flag:
 				out.write(json.dumps({'text':text,'pos_list': pos_list, 'relations': relations},ensure_ascii=False))
+				out.write('\n')
+			else:
+				out.write(json.dumps({'text':text,'pos_list': pos_list, 'relations':relations},ensure_ascii=False))
 				out.write('\n')
 def process_test(filename,out_filename,is_char=True):
 	if is_char:
